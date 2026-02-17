@@ -12,15 +12,13 @@ from flask import Flask, render_template, request, session, jsonify, redirect, u
 # ======================
 # CONFIGURATION
 # ======================
-# Try the requested path first, fallback to local
 DB_DIR = '/opt/extra1_1tb/database/market_crash'
 DB_PATH = os.path.join(DB_DIR, 'market_crash.db')
 
-# Check if we can write to the directory
+# Check and create database path
 def check_and_create_db_path():
     try:
         os.makedirs(DB_DIR, exist_ok=True)
-        # Test write access
         test_file = os.path.join(DB_DIR, '.write_test')
         with open(test_file, 'w') as f:
             f.write('test')
@@ -29,12 +27,11 @@ def check_and_create_db_path():
         return DB_PATH
     except PermissionError:
         print(f"✗ Permission denied: {DB_DIR}")
-        print("  Falling back to local directory...")
+        print("  Using local directory instead...")
         local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'market_crash.db')
         return local_path
     except Exception as e:
-        print(f"✗ Error checking path: {e}")
-        print("  Falling back to local directory...")
+        print(f"✗ Error: {e}")
         local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'market_crash.db')
         return local_path
 
@@ -43,32 +40,19 @@ DB_PATH = check_and_create_db_path()
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.urandom(24)
 app.config['PERMANENT_SESSION_LIFETIME'] = 3600
-app.config['DEBUG'] = True  # Enable debug mode to see errors
 
 # ======================
-# DATABASE SETUP
+# DATABASE - INITIALIZED AT MODULE LOAD
 # ======================
-def get_db():
-    if 'db' not in g:
-        try:
-            g.db = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
-            g.db.row_factory = sqlite3.Row
-        except Exception as e:
-            print(f"DB Connection Error: {e}")
-            raise
-    return g.db
-
-@app.teardown_appcontext
-def close_db(error):
-    if hasattr(g, 'db'):
-        g.db.close()
-
 def init_db():
+    """Initialize database tables - called immediately when module loads"""
     try:
+        print(f"Initializing database at: {DB_PATH}")
         db = sqlite3.connect(DB_PATH)
         c = db.cursor()
         c.execute("PRAGMA foreign_keys = ON")
         
+        # Create all tables
         c.execute('''CREATE TABLE IF NOT EXISTS rooms (
             room_id TEXT PRIMARY KEY,
             current_price REAL NOT NULL DEFAULT 100.0,
@@ -113,16 +97,40 @@ def init_db():
             FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
         )''')
         
+        # Create indexes
         c.execute('CREATE INDEX IF NOT EXISTS idx_rooms_active ON rooms(is_active, crash_occurred, round_number)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_players_room ON players(room_id, is_active)')
         
         db.commit()
         db.close()
-        print(f"✓ Database initialized at {DB_PATH}")
+        print("✓ Database tables created successfully")
+        
+        # Verify tables exist
+        db = sqlite3.connect(DB_PATH)
+        c = db.cursor()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [row[0] for row in c.fetchall()]
+        db.close()
+        print(f"✓ Tables in database: {tables}")
+        
     except Exception as e:
-        print(f"✗ Database initialization failed: {e}")
+        print(f"✗ Database initialization FAILED: {e}")
         traceback.print_exc()
         raise
+
+# Initialize database NOW (before any routes can be accessed)
+init_db()
+
+def get_db():
+    if 'db' not in g:
+        g.db = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
+        g.db.row_factory = sqlite3.Row
+    return g.db
+
+@app.teardown_appcontext
+def close_db(error):
+    if hasattr(g, 'db'):
+        g.db.close()
 
 # ======================
 # GAME ENGINE
@@ -203,11 +211,6 @@ def market_simulation_loop():
         except Exception as e:
             print(f"✗ Market sim error: {e}")
             traceback.print_exc()
-            if 'db' in locals():
-                try:
-                    db.close()
-                except:
-                    pass
 
 # ======================
 # HELPERS
@@ -245,7 +248,6 @@ def require_player(f):
             return f(*args, **kwargs)
         except Exception as e:
             print(f"Error in require_player: {e}")
-            traceback.print_exc()
             return jsonify({'error': str(e)}), 500
     return decorated
 
@@ -261,12 +263,7 @@ def generate_room_id():
 # ======================
 @app.route('/')
 def index():
-    try:
-        return render_template('index.html', db_path=DB_PATH)
-    except Exception as e:
-        print(f"Error in index: {e}")
-        traceback.print_exc()
-        return f"Error loading page: {str(e)}", 500
+    return render_template('index.html', db_path=DB_PATH)
 
 @app.route('/create_room', methods=['POST'])
 def create_room():
@@ -289,7 +286,7 @@ def create_room():
     except Exception as e:
         print(f"Error in create_room: {e}")
         traceback.print_exc()
-        return f"Error creating room: {str(e)}", 500
+        return f"Error: {str(e)}", 500
 
 @app.route('/join_room', methods=['POST'])
 def join_room():
@@ -317,8 +314,7 @@ def join_room():
         return redirect(url_for('room', room_id=room_id))
     except Exception as e:
         print(f"Error in join_room: {e}")
-        traceback.print_exc()
-        return f"Error joining room: {str(e)}", 500
+        return f"Error: {str(e)}", 500
 
 @app.route('/room/<room_id>')
 def room(room_id):
@@ -349,8 +345,7 @@ def room(room_id):
         )
     except Exception as e:
         print(f"Error in room: {e}")
-        traceback.print_exc()
-        return f"Error loading room: {str(e)}", 500
+        return f"Error: {str(e)}", 500
 
 @app.route('/api/room/<room_id>/state')
 @require_player
@@ -394,16 +389,6 @@ def room_state(room_id):
             status = f"Round {room['round_number']} of {MarketEngine.MAX_ROUNDS}"
         
         time_until = 10
-        if room['last_updated']:
-            try:
-                from datetime import datetime
-                last_updated = room['last_updated']
-                if isinstance(last_updated, str):
-                    last_updated = datetime.fromisoformat(last_updated.replace('Z', '+00:00'))
-                time_diff = time.time() - last_updated.timestamp()
-                time_until = max(0, 10 - (time_diff % 10))
-            except:
-                time_until = 10
         
         return jsonify({
             'success': True,
@@ -428,13 +413,12 @@ def room_state(room_id):
                 'shares': t['shares'],
                 'price': round(t['price_per_share'], 2),
                 'total': round(t['total_amount'], 2),
-                'timestamp': t['timestamp'].strftime('%H:%M:%S') if hasattr(t['timestamp'], 'strftime') else str(t['timestamp'])
+                'timestamp': str(t['timestamp'])
             } for t in txns],
             'price_history': chart_data
         })
     except Exception as e:
         print(f"Error in room_state: {e}")
-        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/room/<room_id>/buy', methods=['POST'])
@@ -443,10 +427,7 @@ def buy_shares(room_id):
     try:
         if not request.is_json:
             return jsonify({'error': 'Invalid request'}), 400
-        try:
-            shares = int(request.json.get('shares', 0))
-        except:
-            return jsonify({'error': 'Invalid shares'}), 400
+        shares = int(request.json.get('shares', 0))
             
         if shares <= 0:
             return jsonify({'error': 'Shares must be positive'}), 400
@@ -456,7 +437,7 @@ def buy_shares(room_id):
         price = request.room['current_price']
         total = shares * price
         if request.player['cash'] < total:
-            return jsonify({'error': f'Need ${total:.2f}, have ${request.player["cash"]:.2f}'}), 400
+            return jsonify({'error': f'Need ${total:.2f}'}), 400
         
         db = get_db()
         new_cash = request.player['cash'] - total
@@ -467,11 +448,9 @@ def buy_shares(room_id):
                      VALUES (?, ?, 'buy', ?, ?, ?)''',
                   (room_id, request.player['id'], shares, price, total))
         db.commit()
-        return jsonify({'success': True, 'message': f'Bought {shares} @ ${price:.2f} (${total:.2f})',
-                       'new_cash': round(new_cash, 2), 'new_shares': new_shares})
+        return jsonify({'success': True, 'message': f'Bought {shares} @ ${price:.2f}'})
     except Exception as e:
         print(f"Error in buy_shares: {e}")
-        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/room/<room_id>/sell', methods=['POST'])
@@ -480,17 +459,14 @@ def sell_shares(room_id):
     try:
         if not request.is_json:
             return jsonify({'error': 'Invalid request'}), 400
-        try:
-            shares = int(request.json.get('shares', 0))
-        except:
-            return jsonify({'error': 'Invalid shares'}), 400
+        shares = int(request.json.get('shares', 0))
             
         if shares <= 0:
             return jsonify({'error': 'Shares must be positive'}), 400
         if not request.room['is_active'] or request.room['crash_occurred']:
             return jsonify({'error': 'Market closed'}), 400
         if request.player['shares_held'] < shares:
-            return jsonify({'error': f'Own {request.player["shares_held"]} shares, trying to sell {shares}'}), 400
+            return jsonify({'error': 'Not enough shares'}), 400
         
         price = request.room['current_price']
         total = shares * price
@@ -503,11 +479,9 @@ def sell_shares(room_id):
                      VALUES (?, ?, 'sell', ?, ?, ?)''',
                   (room_id, request.player['id'], shares, price, total))
         db.commit()
-        return jsonify({'success': True, 'message': f'Sold {shares} @ ${price:.2f} (${total:.2f})',
-                       'new_cash': round(new_cash, 2), 'new_shares': new_shares})
+        return jsonify({'success': True, 'message': f'Sold {shares} @ ${price:.2f}'})
     except Exception as e:
         print(f"Error in sell_shares: {e}")
-        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
@@ -515,10 +489,10 @@ if __name__ == '__main__':
     print("🚀 MARKET CRASH GAME SERVER STARTING")
     print(f"📁 Database: {DB_PATH}")
     print(f"🌐 Access at: http://localhost:8086")
-    print(f"⏱️  Market updates every 10 seconds")
     print("="*60 + "\n")
     
-    init_db()
+    # Start market simulation thread
     threading.Thread(target=market_simulation_loop, daemon=True).start()
     
-    app.run(host='0.0.0.0', port=8086, debug=True, threaded=True)
+    # Start Flask
+    app.run(host='0.0.0.0', port=8086, debug=False, threaded=True)

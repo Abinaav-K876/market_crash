@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import os
 import sqlite3
 import threading
@@ -11,32 +10,13 @@ from flask import Flask, render_template, request, session, jsonify, redirect, u
 # ======================
 # CONFIGURATION
 # ======================
-DB_DIR = '/opt/extra1_1tb/database/market_crash'
-DB_PATH = os.path.join(DB_DIR, 'market_crash.db')
-
-
-# Check and create database path
-def check_and_create_db_path():
-    try:
-        os.makedirs(DB_DIR, exist_ok=True)
-        test_file = os.path.join(DB_DIR, '.write_test')
-        with open(test_file, 'w') as f:
-            f.write('test')
-        os.remove(test_file)
-        print(f"✓ Database directory writable: {DB_DIR}")
-        return DB_PATH
-    except PermissionError:
-        print(f"✗ Permission denied: {DB_DIR}")
-        print("  Using local directory instead...")
-        local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'market_crash.db')
-        return local_path
-    except Exception as e:
-        print(f"✗ Error: {e}")
-        local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'market_crash.db')
-        return local_path
-
-
-DB_PATH = check_and_create_db_path()
+# Use environment variables for configuration with sensible defaults
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.environ.get('DATABASE_URL', os.path.join(BASE_DIR, 'market_crash.db'))
+# Support old specific path if it exists and is writable, otherwise use default
+ALT_DB_DIR = '/opt/extra1_1tb/database/market_crash'
+if os.path.exists(ALT_DB_DIR) and os.access(ALT_DB_DIR, os.W_OK):
+    DB_PATH = os.path.join(ALT_DB_DIR, 'market_crash.db')
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.environ.get('SECRET_KEY', 'market-crash-secret-key-change-in-prod')
@@ -44,15 +24,28 @@ app.config['PERMANENT_SESSION_LIFETIME'] = 3600
 
 
 # ======================
-# DATABASE - INITIALIZED AT MODULE LOAD
+# DATABASE
 # ======================
+def get_db_connection():
+    """Create a new database connection with timeout for concurrency"""
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    # Enable WAL mode for better concurrency (multiple readers, one writer)
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA foreign_keys = ON')
+    return conn
+
+
 def init_db():
-    """Initialize database tables - called immediately when module loads"""
+    """Initialize database tables"""
     try:
+        db_dir = os.path.dirname(DB_PATH)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+            
         print(f"Initializing database at: {DB_PATH}")
-        db = sqlite3.connect(DB_PATH)
+        db = get_db_connection()
         c = db.cursor()
-        c.execute("PRAGMA foreign_keys = ON")
 
         # Create all tables
         c.execute('''CREATE TABLE IF NOT EXISTS rooms (
@@ -105,34 +98,16 @@ def init_db():
 
         db.commit()
         db.close()
-        print("✓ Database tables created successfully")
-
-        # Verify tables exist
-        db = sqlite3.connect(DB_PATH)
-        c = db.cursor()
-        c.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [row[0] for row in c.fetchall()]
-        db.close()
-        print(f"✓ Tables in database: {tables}")
-
+        print("✓ Database initialized successfully")
     except Exception as e:
         print(f"✗ Database initialization FAILED: {e}")
         traceback.print_exc()
         raise
 
 
-# Initialize database NOW (before any routes can be accessed)
-init_db()
-
-# Start market simulation thread at module load so it works with
-# both `python app.py` and WSGI launchers like `flask run` / gunicorn
-threading.Thread(target=market_simulation_loop, daemon=True).start()
-
-
 def get_db():
     if 'db' not in g:
-        g.db = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
-        g.db.row_factory = sqlite3.Row
+        g.db = get_db_connection()
     return g.db
 
 
@@ -186,15 +161,25 @@ class MarketEngine:
 
 
 def market_simulation_loop():
+    """Background thread to update markets. 
+    Uses a 'last_updated' check to prevent redundant updates from multiple workers.
+    """
     print("✓ Market simulation engine started")
     while True:
-        time.sleep(10)
         try:
-            db = sqlite3.connect(DB_PATH)
-            db.row_factory = sqlite3.Row
+            # Connect and use a short timeout
+            db = get_db_connection()
             c = db.cursor()
+            
+            # Select rooms that haven't been updated in at least 9.5 seconds
+            # For round 0 (waiting), we wait until the room is 20s old to allow players to join
             c.execute('''SELECT room_id, current_price, round_number FROM rooms 
-                        WHERE is_active=1 AND crash_occurred=0 AND round_number < ?''',
+                        WHERE is_active=1 AND crash_occurred=0 AND round_number < ?
+                        AND (
+                            (round_number > 0 AND last_updated < datetime('now', '-9.5 seconds'))
+                            OR 
+                            (round_number = 0 AND created_at < datetime('now', '-20 seconds'))
+                        )''',
                       (MarketEngine.MAX_ROUNDS,))
             rooms = c.fetchall()
 
@@ -208,21 +193,30 @@ def market_simulation_loop():
                 is_active = 0 if (is_crash or round_num >= MarketEngine.MAX_ROUNDS) else 1
                 crash_occurred = 1 if is_crash else 0
 
+                # Use a more specific UPDATE to ensure we don't double-update if another worker just did
                 c.execute('''UPDATE rooms SET current_price=?, round_number=?, is_active=?, 
-                            crash_occurred=?, last_updated=CURRENT_TIMESTAMP WHERE room_id=?''',
+                            crash_occurred=?, last_updated=CURRENT_TIMESTAMP 
+                            WHERE room_id=? AND (
+                                (round_number > 0 AND last_updated < datetime('now', '-9 seconds'))
+                                OR 
+                                (round_number = 0 AND created_at < datetime('now', '-18 seconds'))
+                            )''',
                           (new_price, round_num, is_active, crash_occurred, room_id))
-
-                c.execute('''INSERT INTO price_history (room_id, round_number, price, event_type) 
-                            VALUES (?, ?, ?, ?)''', (room_id, round_num, new_price, event))
-
-                if is_crash:
-                    print(f"!!! MARKET CRASH in room {room_id} at round {round_num} !!!")
+                
+                if c.rowcount > 0:
+                    c.execute('''INSERT INTO price_history (room_id, round_number, price, event_type) 
+                                VALUES (?, ?, ?, ?)''', (room_id, round_num, new_price, event))
+                    if is_crash:
+                        print(f"!!! MARKET CRASH in room {room_id} at round {round_num} !!!")
 
             db.commit()
             db.close()
         except Exception as e:
             print(f"✗ Market sim error: {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
+        
+        # Sleep for a bit before checking again
+        time.sleep(2)
 
 
 # ======================
@@ -267,9 +261,9 @@ def require_player(f):
 
 
 def generate_room_id():
+    db = get_db()
     while True:
         rid = ''.join(random.choices('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', k=6))
-        db = get_db()
         if not db.execute("SELECT 1 FROM rooms WHERE room_id=?", (rid,)).fetchone():
             return rid
 
@@ -289,8 +283,8 @@ def create_room():
         if not (2 <= len(name) <= 15):
             return redirect('/')
 
-        room_id = generate_room_id()
         db = get_db()
+        room_id = generate_room_id()
         db.execute('INSERT INTO rooms (room_id) VALUES (?)', (room_id,))
         db.execute('INSERT INTO players (room_id, player_name) VALUES (?, ?)', (room_id, name))
         player_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
@@ -401,14 +395,20 @@ def room_state(room_id):
 
         if room['crash_occurred']:
             status = "MARKET CRASHED! Game over."
+            time_until = 0
         elif room['round_number'] >= MarketEngine.MAX_ROUNDS:
             status = f"Game completed {MarketEngine.MAX_ROUNDS} rounds!"
+            time_until = 0
         elif room['round_number'] == 0:
             status = "Waiting for players... Game starts soon!"
+            # Calculate time until start (20s after creation)
+            created = db.execute("SELECT (strftime('%s', 'now') - strftime('%s', created_at)) as diff FROM rooms WHERE room_id=?", (room_id,)).fetchone()
+            time_until = max(0, 20 - created['diff']) if created else 20
         else:
             status = f"Round {room['round_number']} of {MarketEngine.MAX_ROUNDS}"
-
-        time_until = 10
+            # Calculate time until next update (10s after last update)
+            last_upd = db.execute("SELECT (strftime('%s', 'now') - strftime('%s', last_updated)) as diff FROM rooms WHERE room_id=?", (room_id,)).fetchone()
+            time_until = max(0, 10 - last_upd['diff']) if last_upd else 10
 
         return jsonify({
             'success': True,
@@ -419,7 +419,7 @@ def room_state(room_id):
                 'is_active': room['is_active'],
                 'crash_occurred': room['crash_occurred'],
                 'status_message': status,
-                'time_until_update': time_until
+                'time_until_update': int(time_until)
             },
             'player': {
                 'cash': round(request.player['cash'], 2),
@@ -507,12 +507,12 @@ def sell_shares(room_id):
         return jsonify({'error': str(e)}), 500
 
 
-if __name__ == '__main__':
-    print("\n" + "=" * 60)
-    print("🚀 MARKET CRASH GAME SERVER STARTING")
-    print(f"📁 Database: {DB_PATH}")
-    print(f"🌐 Access at: http://localhost:8086")
-    print("=" * 60 + "\n")
+# Initialize database and start simulation thread
+init_db()
+# Start market simulation thread
+threading.Thread(target=market_simulation_loop, daemon=True).start()
 
-    # Start Flask
-    app.run(host='0.0.0.0', port=8086, debug=False, threaded=True)
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8086))
+    print(f"🚀 MARKET CRASH GAME SERVER STARTING ON PORT {port}")
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

@@ -453,6 +453,11 @@
                     playerShares  = p.shares;
                     IS_ACTIVE     = r.is_active;
                     CRASH_OCCURRED = r.crash_occurred;
+                    
+                    // Sync countdown
+                    if (r.time_until_update !== undefined) {
+                        countdown = r.time_until_update;
+                    }
 
                     document.getElementById('current-price').textContent = '$' + r.current_price.toFixed(2);
                     document.getElementById('player-cash').textContent   = '$' + p.cash.toFixed(2);

@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  market-crash:
+    build: .
+    ports:
+      - "8086:8086"
+    volumes:
+      - .:/app
+    environment:
+      - SECRET_KEY=your-secret-key-here
+      - DATABASE_URL=/app/market_crash.db
+    restart: always

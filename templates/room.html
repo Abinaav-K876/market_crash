@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Crash - Room {{ room_id }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="room-header">
+                <div class="room-id">{{ room_id }}</div>
+                <div class="status-bar {{ 'crashed' if crash_occurred else 'completed' if round_number >= 10 else '' }}">
+                    <div class="status-message" id="status-message">
+                        {% if crash_occurred %}MARKET CRASHED! Game Over
+                        {% elif round_number >= 10 %}Game Completed - Final Results
+                        {% elif round_number == 0 %}Waiting for players... Game starts soon!
+                        {% else %}Round {{ round_number }} of 10{% endif %}
+                    </div>
+                    <div class="countdown" id="countdown">10 seconds until next update</div>
+                </div>
+            </div>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <div class="card-title">📈 LIVE MARKET</div>
+                <div class="price-display" id="current-price">${{ "%.2f"|format(current_price) }}</div>
+                <div class="chart-container"><canvas id="price-chart"></canvas></div>
+                <div class="chart-label">Price history (last 10 rounds)</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">💼 YOUR PORTFOLIO</div>
+                <div class="portfolio-stats">
+                    <div class="stat-label">CASH</div>
+                    <div class="stat-value cash" id="player-cash">${{ "%.2f"|format(initial_cash) }}</div>
+                    <div class="stat-label">SHARES HELD</div>
+                    <div class="stat-value shares" id="player-shares">{{ initial_shares }}</div>
+                    <div class="stat-label total-label">TOTAL VALUE</div>
+                    <div class="stat-value value" id="total-value">${{ "%.2f"|format(initial_cash + initial_shares * current_price) }}</div>
+                </div>
+                <div class="action-buttons">
+                    <button class="btn-action btn-buy" id="buy-btn" {% if not is_active or crash_occurred %}disabled{% endif %}>BUY SHARES</button>
+                    <button class="btn-action btn-sell" id="sell-btn" {% if not is_active or crash_occurred %}disabled{% endif %}>SELL SHARES</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">🏆 LEADERBOARD</div>
+                <table class="leaderboard-table">
+                    <thead><tr><th>RANK</th><th>TRADER</th><th>VALUE</th></tr></thead>
+                    <tbody id="leaderboard-body">
+                        <tr><td class="rank rank-1">1</td><td>{{ player_name }}</td><td>${{ "%.2f"|format(initial_cash + initial_shares * current_price) }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <div class="card-title">📊 RECENT TRANSACTIONS</div>
+                <table class="transactions-table">
+                    <thead><tr><th>TRADER</th><th>TYPE</th><th>SHARES</th><th>PRICE</th></tr></thead>
+                    <tbody id="transactions-body">
+                        <tr><td colspan="4" style="text-align:center">No transactions yet</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="game-over" id="game-over">
+        <h2 id="game-result-title">MARKET CRASHED!</h2>
+        <div class="winner-message" id="winner-message">Loading winner...</div>
+        <div class="final-leaderboard">
+            <div class="rankings-title">Final Rankings</div>
+            <ol id="final-rankings"><li>Loading results...</li></ol>
+        </div>
+        <button class="btn-home" onclick="window.location.href='/'">BACK TO HOME</button>
+    </div>
+
+    <div class="message-container" id="message-container"></div>
+
+    <script>
+        const ROOM_ID = "{{ room_id }}";
+        const IS_ACTIVE = {{ 1 if is_active else 0 }};
+        const CRASH_OCCURRED = {{ 1 if crash_occurred else 0 }};
+        let countdown = 10, countdownInterval, pollInterval, priceChart;
+
+        function initChart() {
+            const ctx = document.getElementById('price-chart').getContext('2d');
+            priceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: 10}, (_, i) => `Round ${i+1}`),
+                    datasets: [{
+                        label: 'Stock Price ($)',
+                        data: Array(10).fill({{ current_price }}),
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#3498db',
+                        pointRadius: 5,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: false, grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#bdc3c7' } },
+                        x: { grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#bdc3c7' } }
+                    }
+                }
+            });
+        }
+
+        function updateCountdown() {
+            document.getElementById('countdown').textContent = `${countdown} seconds until next update`;
+            countdown = countdown > 0 ? countdown - 1 : 10;
+        }
+
+        function showMessage(msg, type='success') {
+            const container = document.getElementById('message-container');
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.textContent = msg;
+            container.appendChild(div);
+            setTimeout(() => div.remove(), 3000);
+        }
+
+        document.getElementById('buy-btn')?.addEventListener('click', () => {
+            const shares = prompt(`How many shares to BUY?\nCurrent price: $${document.getElementById('current-price').textContent.replace('$','')}`);
+            if (shares && !isNaN(shares) && parseInt(shares) > 0) {
+                fetch(`/api/room/${ROOM_ID}/buy`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({shares: parseInt(shares)})
+                })
+                .then(r => r.json())
+                .then(d => showMessage(d.success ? d.message : d.error, d.success ? 'success' : 'error'))
+                .catch(() => showMessage('Transaction failed', 'error'));
+            }
+        });
+
+        document.getElementById('sell-btn')?.addEventListener('click', () => {
+            const curShares = parseInt(document.getElementById('player-shares').textContent);
+            if (curShares === 0) return showMessage('No shares to sell!', 'error');
+            const shares = prompt(`How many shares to SELL? (You own ${curShares})\nCurrent price: $${document.getElementById('current-price').textContent.replace('$','')}`);
+            if (shares && !isNaN(shares) && parseInt(shares) > 0 && parseInt(shares) <= curShares) {
+                fetch(`/api/room/${ROOM_ID}/sell`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({shares: parseInt(shares)})
+                })
+                .then(r => r.json())
+                .then(d => showMessage(d.success ? d.message : d.error, d.success ? 'success' : 'error'))
+                .catch(() => showMessage('Transaction failed', 'error'));
+            } else if (shares) {
+                showMessage(`Invalid amount. You own ${curShares} shares.`, 'error');
+            }
+        });
+
+        function pollGameState() {
+            fetch(`/api/room/${ROOM_ID}/state`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) {
+                        if (data.error && data.error.includes('Session expired')) window.location.href = '/';
+                        return;
+                    }
+
+                    document.getElementById('current-price').textContent = '$' + data.room.current_price.toFixed(2);
+                    document.getElementById('player-cash').textContent = '$' + data.player.cash.toFixed(2);
+                    document.getElementById('player-shares').textContent = data.player.shares;
+                    document.getElementById('total-value').textContent = '$' + data.player.total_value.toFixed(2);
+                    document.getElementById('status-message').textContent = data.room.status_message;
+
+                    const bar = document.querySelector('.status-bar');
+                    bar.className = 'status-bar';
+                    if (data.room.crash_occurred) bar.classList.add('crashed');
+                    else if (!data.room.is_active && data.room.round_number >= data.room.max_rounds) bar.classList.add('completed');
+
+                    countdown = Math.ceil(data.room.time_until_update);
+
+                    const lb = document.getElementById('leaderboard-body');
+                    lb.innerHTML = '';
+                    data.leaderboard.forEach((p, i) => {
+                        const row = document.createElement('tr');
+                        if (p.is_current) row.classList.add('current-player');
+                        row.innerHTML = `<td class="rank ${i<3 ? 'rank-'+(i+1) : ''}">${i+1}</td><td>${p.player_name}</td><td>$${p.total_value.toFixed(2)}</td>`;
+                        lb.appendChild(row);
+                    });
+
+                    const tx = document.getElementById('transactions-body');
+                    tx.innerHTML = '';
+                    if(data.transactions.length === 0) {
+                        tx.innerHTML = '<tr><td colspan="4" style="text-align:center">No transactions yet</td></tr>';
+                    } else {
+                        data.transactions.forEach(t => {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `<td>${t.player_name}</td><td class="${t.type==='BUY'?'buy':'sell'}">${t.type}</td><td>${t.shares}</td><td>$${t.price.toFixed(2)}</td>`;
+                            tx.appendChild(row);
+                        });
+                    }
+
+                    if (priceChart && data.price_history.length) {
+                        const labels = data.price_history.map(p => `Round ${p.round}`);
+                        const prices = data.price_history.map(p => p.price);
+                        const lastEvent = data.price_history[data.price_history.length-1].event;
+                        let color = '#3498db';
+                        if (['CRASH','CRASH_WARNING'].includes(lastEvent)) color = '#e74c3c';
+                        else if (['SURGE','RISE'].includes(lastEvent)) color = '#2ecc71';
+                        else if (lastEvent === 'DROP') color = '#e67e22';
+
+                        priceChart.data.labels = labels;
+                        priceChart.data.datasets[0].data = prices;
+                        priceChart.data.datasets[0].borderColor = color;
+                        priceChart.data.datasets[0].pointBackgroundColor = color;
+                        priceChart.update();
+                    }
+
+                    if (!data.room.is_active && (data.room.crash_occurred || data.room.round_number >= data.room.max_rounds)) {
+                        clearInterval(pollInterval);
+                        clearInterval(countdownInterval);
+                        const go = document.getElementById('game-over');
+                        const title = document.getElementById('game-result-title');
+                        const winner = document.getElementById('winner-message');
+                        const ranks = document.getElementById('final-rankings');
+
+                        title.textContent = data.room.crash_occurred ? '💥 MARKET CRASHED! 💥' : '🏆 GAME COMPLETED! 🏆';
+                        title.style.color = data.room.crash_occurred ? '#e74c3c' : '#2ecc71';
+
+                        if (data.leaderboard.length) {
+                            winner.textContent = `${data.leaderboard[0].player_name} wins with $${data.leaderboard[0].total_value.toFixed(2)}!`;
+                            ranks.innerHTML = data.leaderboard.map((p,i) =>
+                                `<li style="${i===0?'font-size:1.8rem;color:#f1c40f;font-weight:bold':''}">${p.player_name}: $${p.total_value.toFixed(2)}</li>`
+                            ).join('');
+                        }
+
+                        setTimeout(() => go.classList.add('show'), 1000);
+                    }
+                })
+                .catch(console.error);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initChart();
+            updateCountdown();
+            countdownInterval = setInterval(updateCountdown, 1000);
+            pollGameState();
+            pollInterval = setInterval(pollGameState, 2000);
+
+            if (!IS_ACTIVE || CRASH_OCCURRED) {
+                document.getElementById('buy-btn')?.setAttribute('disabled', 'true');
+                document.getElementById('sell-btn')?.setAttribute('disabled', 'true');
+            }
+        });
+
+        window.addEventListener('beforeunload', () => {
+            clearInterval(pollInterval);
+            clearInterval(countdownInterval);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Crash - Economic Simulation Game</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container index-container">
+        <header class="index-header">
+            <h1>MARKET CRASH</h1>
+            <div class="subtitle">Can you beat the market before it collapses?</div>
+        </header>
+
+        <section class="game-desc">
+            <h2>How to Play</h2>
+            <p>💰 Start with $1,000 cash and zero shares</p>
+            <p>📈 Buy low, sell high as the market fluctuates every 10 seconds</p>
+            <p>⚠️ Watch for crash warnings - the market can collapse at any moment!</p>
+            <p>🏆 Highest portfolio value when the game ends wins</p>
+
+            <div class="features">
+                <div class="feature">
+                    <h3>Real-time Market</h3>
+                    <p>Dynamic price movements with realistic events</p>
+                </div>
+                <div class="feature">
+                    <h3>Multiplayer</h3>
+                    <p>Compete against friends in private rooms</p>
+                </div>
+                <div class="feature">
+                    <h3>Strategic Depth</h3>
+                    <p>Risk management separates winners from losers</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="actions">
+            <div>
+                <div class="section-title">Create New Room</div>
+                <form action="{{ url_for('create_room') }}" method="post">
+                    <div class="form-group">
+                        <label for="player_name_create">Your Trader Name</label>
+                        <input type="text" id="player_name_create" name="player_name" required
+                               placeholder="Enter your name (2-15 characters)" maxlength="15" minlength="2">
+                    </div>
+                    <button type="submit" class="btn btn-create">Create Room &raquo;</button>
+                </form>
+            </div>
+
+            <div>
+                <div class="section-title">Join Existing Room</div>
+                <form action="{{ url_for('join_room') }}" method="post">
+                    <div class="form-group">
+                        <label for="room_id">Room ID</label>
+                        <input type="text" id="room_id" name="room_id" required
+                               placeholder="Enter 6-character room ID" maxlength="6" minlength="6" pattern="[A-Z0-9]{6}">
+                        <div class="room-id-example">Example: A7B9C2</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="player_name_join">Your Trader Name</label>
+                        <input type="text" id="player_name_join" name="player_name" required
+                               placeholder="Enter your name (2-15 characters)" maxlength="15" minlength="2">
+                    </div>
+                    <button type="submit" class="btn btn-join">Join Room &raquo;</button>
+                </form>
+            </div>
+        </section>
+
+        <footer>
+            <p>Market Crash &copy; 2026 | Economic Simulation Game</p>
+            <p>Flask Server Running on Port 8086</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/index.js') }}"></script>
+</body>
+</html>

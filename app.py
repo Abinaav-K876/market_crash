@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import os
-import sys
 import sqlite3
 import threading
 import time
@@ -40,7 +39,7 @@ def check_and_create_db_path():
 DB_PATH = check_and_create_db_path()
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
-app.secret_key = os.urandom(24)
+app.secret_key = os.environ.get('SECRET_KEY', 'market-crash-secret-key-change-in-prod')
 app.config['PERMANENT_SESSION_LIFETIME'] = 3600
 
 
@@ -125,6 +124,10 @@ def init_db():
 # Initialize database NOW (before any routes can be accessed)
 init_db()
 
+# Start market simulation thread at module load so it works with
+# both `python app.py` and WSGI launchers like `flask run` / gunicorn
+threading.Thread(target=market_simulation_loop, daemon=True).start()
+
 
 def get_db():
     if 'db' not in g:
@@ -135,8 +138,9 @@ def get_db():
 
 @app.teardown_appcontext
 def close_db(error):
-    if hasattr(g, 'db'):
-        g.db.close()
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
 
 
 # ======================
@@ -509,9 +513,6 @@ if __name__ == '__main__':
     print(f"📁 Database: {DB_PATH}")
     print(f"🌐 Access at: http://localhost:8086")
     print("=" * 60 + "\n")
-
-    # Start market simulation thread
-    threading.Thread(target=market_simulation_loop, daemon=True).start()
 
     # Start Flask
     app.run(host='0.0.0.0', port=8086, debug=False, threaded=True)

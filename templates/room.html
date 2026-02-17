@@ -2,622 +2,238 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Room {{ room_id }} — Market Crash</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MktCrash Pro | {{ room_id }}</title>
+    <meta name="description" content="Professional-grade market simulation terminal.">
+    <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.3/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.min.js"></script>
 </head>
-<body>
+<body class="app-mode">
 
-    <!-- Ticker tape -->
-    <div class="ticker-tape">
-        <div class="ticker-inner">
-            <span class="ticker-item"><span class="ticker-symbol">ROOM</span><span class="ticker-price">{{ room_id }}</span><span class="ticker-change up">LIVE</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">PRICE</span><span class="ticker-price">${{ "%.2f"|format(current_price) }}</span><span class="ticker-change up">NOW</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">ROUND</span><span class="ticker-price">{{ round_number }}/10</span><span class="ticker-change up">ACTIVE</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">CASH</span><span class="ticker-price">${{ "%.2f"|format(initial_cash) }}</span><span class="ticker-change up">AVAIL</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">SHARES</span><span class="ticker-price">{{ initial_shares }}</span><span class="ticker-change up">HELD</span></span>
-            <!-- duplicate for seamless loop -->
-            <span class="ticker-item"><span class="ticker-symbol">ROOM</span><span class="ticker-price">{{ room_id }}</span><span class="ticker-change up">LIVE</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">PRICE</span><span class="ticker-price">${{ "%.2f"|format(current_price) }}</span><span class="ticker-change up">NOW</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">ROUND</span><span class="ticker-price">{{ round_number }}/10</span><span class="ticker-change up">ACTIVE</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">CASH</span><span class="ticker-price">${{ "%.2f"|format(initial_cash) }}</span><span class="ticker-change up">AVAIL</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">SHARES</span><span class="ticker-price">{{ initial_shares }}</span><span class="ticker-change up">HELD</span></span>
-        </div>
-    </div>
+    <!-- Particle Background Layer -->
+    <canvas id="particle-canvas"></canvas>
 
-    <div class="container">
+    <!-- Sound Synthesizer (Hidden) -->
+    <div id="audio-context-init" style="display:none;"></div>
 
-        <!-- Room header -->
-        <header>
-            <div class="room-header">
-                <div>
-                    <div class="room-label-text">Room Code</div>
-                    <div class="room-id-val">{{ room_id }}</div>
+    <div class="app-container">
+        <!-- HEADER -->
+        <header class="app-header">
+            <div class="brand-logo">
+                <div class="brand-icon"></div>
+                <span>MKT<span class="text-bear">CRASH</span> <span class="text-xs text-dim">PRO</span></span>
+            </div>
+            
+            <div class="header-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Room ID</span>
+                    <span class="stat-value text-mono text-blue">{{ room_id }}</span>
                 </div>
-
-                <div class="status-center">
-                    <div class="status-pill {% if crash_occurred %}crashed{% elif round_number >= 10 %}completed{% elif round_number == 0 %}waiting{% else %}active{% endif %}" id="status-pill">
-                        <div class="status-dot"></div>
-                        <span id="status-pill-text">
-                            {%- if crash_occurred -%}CRASHED
-                            {%- elif round_number >= 10 -%}COMPLETED
-                            {%- elif round_number == 0 -%}WAITING
-                            {%- else -%}ROUND {{ round_number }}/10
-                            {%- endif -%}
-                        </span>
-                    </div>
-                    <div class="status-detail" id="status-detail">
-                        {%- if crash_occurred -%}Market collapsed — game over
-                        {%- elif round_number >= 10 -%}10 rounds completed — final results
-                        {%- elif round_number == 0 -%}Waiting for the market to open...
-                        {%- else -%}Market is live — trade now
-                        {%- endif -%}
-                    </div>
+                <div class="stat-item">
+                    <span class="stat-label">Round</span>
+                    <span class="stat-value text-mono" id="header-round">--/10</span>
                 </div>
-
-                <div class="countdown-wrap">
-                    <div class="countdown-label">Next Update</div>
-                    <div class="countdown-ring">
-                        <svg width="58" height="58" viewBox="0 0 58 58">
-                            <circle class="track"    cx="29" cy="29" r="26"/>
-                            <circle class="progress" id="countdown-circle" cx="29" cy="29" r="26"/>
-                        </svg>
-                        <div class="countdown-num" id="countdown-num">10</div>
+                <div class="stat-item">
+                    <span class="stat-label">Net Worth</span>
+                    <span class="stat-value text-mono text-gold" id="header-networth">$0.00</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Status</span>
+                    <div class="flex-center gap-sm">
+                        <div class="status-dot" id="status-indicator"></div>
+                        <span class="stat-value text-mono text-xs" id="status-text">CONNECTING</span>
                     </div>
                 </div>
             </div>
         </header>
 
-        <!-- 2×2 card grid -->
-        <div class="grid">
-
-            <!-- Live Market -->
-            <div class="card">
-                <div class="card-title">
-                    <div class="card-icon blue">📈</div>
-                    Live Market
-                </div>
-                <div class="price-display" id="current-price">${{ "%.2f"|format(current_price) }}</div>
-                <div class="price-change-row">
-                    <span class="event-badge" id="event-badge"></span>
-                </div>
-                <div class="chart-container">
-                    <canvas id="price-chart"></canvas>
-                </div>
-                <div class="chart-label">Price history · last 10 rounds</div>
-            </div>
-
-            <!-- Portfolio -->
-            <div class="card">
-                <div class="card-title">
-                    <div class="card-icon bull">💼</div>
-                    Your Portfolio
-                </div>
-                <div class="portfolio-grid">
-                    <div class="portfolio-stat">
-                        <div class="stat-lbl">Cash</div>
-                        <div class="stat-val cash" id="player-cash">${{ "%.2f"|format(initial_cash) }}</div>
+        <!-- MAIN GRID LAYOUT -->
+        <main class="main-layout">
+            
+            <!-- LEFT SIDEBAR: NEWS & CHAT -->
+            <aside class="panel sidebar-left">
+                <div class="flex-col h-full">
+                    <!-- NEWS FEED -->
+                    <div class="panel-header">
+                        <span>Market Intelligence</span>
+                        <span class="text-xs text-dim">LIVE</span>
                     </div>
-                    <div class="portfolio-stat">
-                        <div class="stat-lbl">Shares Held</div>
-                        <div class="stat-val shares" id="player-shares">{{ initial_shares }}</div>
+                    <div class="news-feed" id="news-feed" style="height: 40%; overflow-y: auto; border-bottom: 1px solid var(--border-dim);">
+                        <div class="flex-center h-full text-dim text-xs">Waiting for market data...</div>
                     </div>
-                    <div class="portfolio-stat full">
-                        <div class="stat-lbl">Total Portfolio Value</div>
-                        <div class="stat-val total" id="total-value">${{ "%.2f"|format(initial_cash + initial_shares * current_price) }}</div>
+
+                    <!-- CHAT SYSTEM -->
+                    <div class="panel-header">
+                        <span>Traders Floor</span>
+                        <div class="flex-center gap-sm">
+                            <div class="status-dot connected"></div>
+                            <span class="text-xs text-dim" id="online-count">1</span>
+                        </div>
+                    </div>
+                    <div class="chat-container">
+                        <div class="chat-messages" id="chat-messages">
+                            <!-- Chat items injected here -->
+                        </div>
+                        <div class="chat-input-area">
+                            <input type="text" id="chat-input" class="chat-input" placeholder="Type a message..." maxlength="140">
+                            <button id="chat-send" class="btn-sm bg-blue">➤</button>
+                        </div>
                     </div>
                 </div>
-                <div class="action-buttons">
-                    <button class="btn-action btn-buy" id="buy-btn" {% if not is_active or crash_occurred %}disabled{% endif %}>
-                        ▲ BUY
-                    </button>
-                    <button class="btn-action btn-sell" id="sell-btn" {% if not is_active or crash_occurred %}disabled{% endif %}>
-                        ▼ SELL
-                    </button>
-                </div>
-            </div>
+            </aside>
 
-            <!-- Leaderboard -->
-            <div class="card">
-                <div class="card-title">
-                    <div class="card-icon gold">🏆</div>
-                    Leaderboard
-                </div>
-                <div class="lb-list" id="lb-list">
-                    <div class="lb-row me">
-                        <div class="lb-rank r1">🥇</div>
-                        <div class="lb-name">{{ player_name }}<span class="lb-you">YOU</span></div>
-                        <div class="lb-val">${{ "%.2f"|format(initial_cash + initial_shares * current_price) }}</div>
+            <!-- CENTER PANEL: CHART & ACTIONS -->
+            <section class="panel center-stage">
+                
+                <!-- CHART HEADER OVERLAY -->
+                <div class="panel-header" style="position: absolute; top: 0; left: 0; right: 0; z-index: 5; background: transparent; border: none;">
+                    <div class="flex-center gap-md">
+                        <span class="text-mono font-bold">MCRSH/USD</span>
+                        <span class="text-xs bg-bull text-bull px-2 py-1 rounded">10x LEVERAGE</span>
+                    </div>
+                    <div class="flex-center gap-md">
+                        <span class="text-xs text-dim">VOL: <span class="text-white">24.5M</span></span>
+                        <span class="text-xs text-dim">HIGH: <span class="text-white" id="stat-high">--</span></span>
+                        <span class="text-xs text-dim">LOW: <span class="text-white" id="stat-low">--</span></span>
                     </div>
                 </div>
-            </div>
 
-            <!-- Transactions -->
-            <div class="card">
-                <div class="card-title">
-                    <div class="card-icon bear">📊</div>
-                    Recent Transactions
+                <!-- MAIN CHART -->
+                <div class="chart-wrapper">
+                    <div class="price-overlay">
+                        <div class="main-price" id="main-price">0.00</div>
+                        <div class="price-delta flex-center gap-sm" id="price-delta-wrap">
+                            <span id="price-delta-val">0.00%</span>
+                            <span class="text-xs text-dim font-normal">LAST TICK</span>
+                        </div>
+                    </div>
+                    <canvas id="main-chart"></canvas>
                 </div>
-                <div class="tx-list" id="tx-list">
-                    <div class="tx-empty">No transactions yet</div>
+
+                <!-- TRADING CONTROLS -->
+                <div class="action-bar">
+                    <!-- BUY SIDE -->
+                    <div class="flex-col gap-md">
+                        <div class="input-group">
+                            <span class="input-label">AMOUNT (SHARES)</span>
+                            <input type="number" id="buy-amount" class="trade-input text-bull" placeholder="0" min="1">
+                        </div>
+                        <div class="flex-row justify-between text-xs text-dim mb-2">
+                            <span>Avail: <span class="text-white text-mono" id="avail-cash">$0.00</span></span>
+                            <span>Max: <span class="text-white text-mono cursor-pointer" id="max-buy-btn">0</span></span>
+                        </div>
+                        <button id="btn-buy" class="trade-btn btn-buy">
+                            <span>BUY MARKET</span>
+                            <span class="text-xs opacity-75" id="buy-est-total">$0.00</span>
+                        </button>
+                    </div>
+
+                    <!-- SELL SIDE -->
+                    <div class="flex-col gap-md">
+                        <div class="input-group">
+                            <span class="input-label">AMOUNT (SHARES)</span>
+                            <input type="number" id="sell-amount" class="trade-input text-bear" placeholder="0" min="1">
+                        </div>
+                        <div class="flex-row justify-between text-xs text-dim mb-2">
+                            <span>Held: <span class="text-white text-mono" id="avail-shares">0</span></span>
+                            <span>Max: <span class="text-white text-mono cursor-pointer" id="max-sell-btn">ALL</span></span>
+                        </div>
+                        <button id="btn-sell" class="trade-btn btn-sell">
+                            <span>SELL MARKET</span>
+                            <span class="text-xs opacity-75" id="sell-est-total">$0.00</span>
+                        </button>
+                    </div>
                 </div>
-            </div>
+            </section>
 
-        </div>
-    </div>
-
-    <!-- ==================== BUY MODAL ==================== -->
-    <div class="modal-overlay" id="buy-modal">
-        <div class="modal">
-            <div class="modal-header">
-                <div class="modal-icon buy">📈</div>
-                <div>
-                    <div class="modal-title">Buy Shares</div>
-                    <div class="modal-subtitle" id="buy-price-lbl">Current price: —</div>
-                </div>
-            </div>
-            <div class="modal-info">
-                <div>
-                    <div class="mi-label">Available Cash</div>
-                    <div class="mi-val" id="buy-cash-val" style="color:var(--bull)">—</div>
-                </div>
-                <div>
-                    <div class="mi-label">Max Affordable</div>
-                    <div class="mi-val" id="buy-max-val" style="color:var(--blue)">— shares</div>
-                </div>
-            </div>
-            <div class="quick-btns" id="buy-quick"></div>
-            <div class="modal-input-wrap">
-                <span class="modal-input-lbl">SHARES</span>
-                <input type="number" class="modal-input buy-mode" id="buy-input" min="1" placeholder="0">
-            </div>
-            <div class="modal-total">
-                <span class="lbl">TOTAL COST</span>
-                <span class="val buy" id="buy-total">$0.00</span>
-            </div>
-            <div class="modal-actions">
-                <button class="btn-modal btn-cancel" id="buy-cancel">Cancel</button>
-                <button class="btn-modal btn-confirm-buy" id="buy-confirm">Buy Now</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ==================== SELL MODAL ==================== -->
-    <div class="modal-overlay" id="sell-modal">
-        <div class="modal">
-            <div class="modal-header">
-                <div class="modal-icon sell">📉</div>
-                <div>
-                    <div class="modal-title">Sell Shares</div>
-                    <div class="modal-subtitle" id="sell-price-lbl">Current price: —</div>
-                </div>
-            </div>
-            <div class="modal-info">
-                <div>
-                    <div class="mi-label">Shares Owned</div>
-                    <div class="mi-val" id="sell-owned-val" style="color:var(--blue)">—</div>
-                </div>
-                <div>
-                    <div class="mi-label">Total Market Value</div>
-                    <div class="mi-val" id="sell-mktval" style="color:var(--bull)">—</div>
-                </div>
-            </div>
-            <div class="quick-btns" id="sell-quick"></div>
-            <div class="modal-input-wrap">
-                <span class="modal-input-lbl">SHARES</span>
-                <input type="number" class="modal-input sell-mode" id="sell-input" min="1" placeholder="0">
-            </div>
-            <div class="modal-total">
-                <span class="lbl">TOTAL PROCEEDS</span>
-                <span class="val sell" id="sell-total">$0.00</span>
-            </div>
-            <div class="modal-actions">
-                <button class="btn-modal btn-cancel" id="sell-cancel">Cancel</button>
-                <button class="btn-modal btn-confirm-sell" id="sell-confirm">Sell Now</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ==================== GAME OVER ==================== -->
-    <div class="game-over" id="game-over">
-        <div class="go-title" id="go-title">MARKET CRASHED</div>
-        <div class="go-sub" id="go-sub">GAME OVER</div>
-
-        <div class="winner-card">
-            <div class="winner-lbl">🏆 Winner</div>
-            <div class="winner-name" id="winner-name">—</div>
-            <div class="winner-val" id="winner-val">—</div>
-        </div>
-
-        <div class="final-rankings">
-            <div class="rankings-lbl">Final Rankings</div>
-            <div id="final-list"></div>
-        </div>
-
-        <button class="btn-home" onclick="window.location.href='/'">↩ Back to Lobby</button>
-    </div>
-
-    <!-- Toast container -->
-    <div class="toast-container" id="toast-container"></div>
-
-    <!-- ==================== GAME SCRIPT ==================== -->
-    <script>
-        const ROOM_ID   = "{{ room_id }}";
-        let IS_ACTIVE      = {{ 1 if is_active else 0 }};
-        let CRASH_OCCURRED = {{ 1 if crash_occurred else 0 }};
-        let currentPrice   = {{ current_price }};
-        let playerCash     = {{ initial_cash }};
-        let playerShares   = {{ initial_shares }};
-        let countdown = 10, countdownInterval, pollInterval, chart;
-        const CIRC = 2 * Math.PI * 26; // SVG circle r=26
-
-        // ── Chart ──────────────────────────────────────────────
-        function initChart() {
-            const ctx = document.getElementById('price-chart').getContext('2d');
-            const grad = ctx.createLinearGradient(0, 0, 0, 210);
-            grad.addColorStop(0, 'rgba(0,180,216,0.22)');
-            grad.addColorStop(1, 'rgba(0,180,216,0)');
-            chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: ['Start'],
-                    datasets: [{
-                        data: [currentPrice],
-                        borderColor: '#00b4d8',
-                        backgroundColor: grad,
-                        borderWidth: 2.5,
-                        pointBackgroundColor: '#00b4d8',
-                        pointBorderColor: '#07091a',
-                        pointBorderWidth: 2,
-                        pointRadius: 5,
-                        pointHoverRadius: 7,
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: { duration: 500, easing: 'easeInOutQuart' },
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            backgroundColor: 'rgba(12,18,32,0.96)',
-                            borderColor: 'rgba(0,180,216,0.3)',
-                            borderWidth: 1,
-                            titleColor: '#8b949e',
-                            bodyColor: '#e6edf3',
-                            bodyFont: { family: "'JetBrains Mono', monospace", size: 13 },
-                            padding: 12,
-                            callbacks: { label: c => ' $' + c.raw.toFixed(2) }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: false,
-                            grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
-                            ticks: { color: '#3d4451', font: { family: "'JetBrains Mono', monospace", size: 11 }, callback: v => '$' + v.toFixed(0) }
-                        },
-                        x: {
-                            grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
-                            ticks: { color: '#3d4451', font: { family: "'JetBrains Mono', monospace", size: 10 }, maxRotation: 0 }
-                        }
-                    }
-                }
-            });
-        }
-
-        // ── Countdown ring ─────────────────────────────────────
-        function tickCountdown() {
-            document.getElementById('countdown-num').textContent = countdown;
-            const offset = CIRC - (countdown / 10) * CIRC;
-            document.getElementById('countdown-circle').style.strokeDashoffset = offset;
-            countdown = countdown > 0 ? countdown - 1 : 10;
-        }
-
-        // ── Toast notifications ────────────────────────────────
-        function toast(msg, type = 'success') {
-            const icons = { success: '✓', error: '✕', info: 'ℹ' };
-            const el = document.createElement('div');
-            el.className = `toast ${type}`;
-            el.innerHTML = `<span class="toast-icon">${icons[type] || '·'}</span><span>${msg}</span>`;
-            document.getElementById('toast-container').appendChild(el);
-            setTimeout(() => el.remove(), 3100);
-        }
-
-        // ── Price flash ────────────────────────────────────────
-        let lastPrice = currentPrice;
-        function flashPrice(newP) {
-            if (newP === lastPrice) return;
-            const el = document.getElementById('current-price');
-            el.classList.remove('flash-up', 'flash-down');
-            void el.offsetWidth; // force reflow
-            el.classList.add(newP > lastPrice ? 'flash-up' : 'flash-down');
-            lastPrice = newP;
-        }
-
-        // ── Quick-amount buttons helper ────────────────────────
-        function buildQuick(containerId, amounts, labelFn, inputId, totalId, price) {
-            const wrap = document.getElementById(containerId);
-            wrap.innerHTML = '';
-            amounts.forEach(({ n, label }) => {
-                if (n <= 0) return;
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'quick-btn';
-                btn.textContent = label || n;
-                btn.onclick = () => {
-                    document.getElementById(inputId).value = n;
-                    document.getElementById(totalId).textContent = '$' + (n * price).toFixed(2);
-                };
-                wrap.appendChild(btn);
-            });
-        }
-
-        // ── BUY MODAL ──────────────────────────────────────────
-        function openBuy() {
-            const max = Math.floor(playerCash / currentPrice);
-            document.getElementById('buy-price-lbl').textContent = `Current price: $${currentPrice.toFixed(2)}`;
-            document.getElementById('buy-cash-val').textContent   = `$${playerCash.toFixed(2)}`;
-            document.getElementById('buy-max-val').textContent    = `${max} shares`;
-            document.getElementById('buy-input').value = '';
-            document.getElementById('buy-total').textContent = '$0.00';
-            buildQuick('buy-quick',
-                [{ n: 1, label: '1' }, { n: 5, label: '5' }, { n: 10, label: '10' }, { n: max, label: 'MAX' }],
-                null, 'buy-input', 'buy-total', currentPrice);
-            document.getElementById('buy-modal').classList.add('show');
-            document.getElementById('buy-input').focus();
-        }
-        function closeBuy() { document.getElementById('buy-modal').classList.remove('show'); }
-
-        document.getElementById('buy-btn').addEventListener('click', openBuy);
-        document.getElementById('buy-cancel').addEventListener('click', closeBuy);
-        document.getElementById('buy-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeBuy(); });
-        document.getElementById('buy-input').addEventListener('input', () => {
-            const n = parseInt(document.getElementById('buy-input').value) || 0;
-            document.getElementById('buy-total').textContent = '$' + (n * currentPrice).toFixed(2);
-        });
-        document.getElementById('buy-confirm').addEventListener('click', () => {
-            const shares = parseInt(document.getElementById('buy-input').value);
-            if (!shares || shares <= 0) { toast('Enter a valid quantity', 'error'); return; }
-            if (shares * currentPrice > playerCash) { toast(`Insufficient funds — need $${(shares * currentPrice).toFixed(2)}`, 'error'); return; }
-            fetch(`/api/room/${ROOM_ID}/buy`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ shares })
-            })
-            .then(r => r.json())
-            .then(d => { closeBuy(); d.success ? toast(d.message, 'success') : toast(d.error, 'error'); if (d.success) pollState(); })
-            .catch(() => toast('Transaction failed', 'error'));
-        });
-
-        // ── SELL MODAL ─────────────────────────────────────────
-        function openSell() {
-            if (playerShares === 0) { toast('You have no shares to sell', 'error'); return; }
-            const half = Math.floor(playerShares / 2);
-            document.getElementById('sell-price-lbl').textContent  = `Current price: $${currentPrice.toFixed(2)}`;
-            document.getElementById('sell-owned-val').textContent  = `${playerShares} shares`;
-            document.getElementById('sell-mktval').textContent     = `$${(playerShares * currentPrice).toFixed(2)}`;
-            document.getElementById('sell-input').value = '';
-            document.getElementById('sell-total').textContent = '$0.00';
-            buildQuick('sell-quick',
-                [{ n: 1, label: '1' }, { n: half, label: '½' }, { n: playerShares, label: 'ALL' }],
-                null, 'sell-input', 'sell-total', currentPrice);
-            document.getElementById('sell-modal').classList.add('show');
-            document.getElementById('sell-input').focus();
-        }
-        function closeSell() { document.getElementById('sell-modal').classList.remove('show'); }
-
-        document.getElementById('sell-btn').addEventListener('click', openSell);
-        document.getElementById('sell-cancel').addEventListener('click', closeSell);
-        document.getElementById('sell-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeSell(); });
-        document.getElementById('sell-input').addEventListener('input', () => {
-            const n = parseInt(document.getElementById('sell-input').value) || 0;
-            document.getElementById('sell-total').textContent = '$' + (n * currentPrice).toFixed(2);
-        });
-        document.getElementById('sell-confirm').addEventListener('click', () => {
-            const shares = parseInt(document.getElementById('sell-input').value);
-            if (!shares || shares <= 0) { toast('Enter a valid quantity', 'error'); return; }
-            if (shares > playerShares) { toast(`You only own ${playerShares} shares`, 'error'); return; }
-            fetch(`/api/room/${ROOM_ID}/sell`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ shares })
-            })
-            .then(r => r.json())
-            .then(d => { closeSell(); d.success ? toast(d.message, 'success') : toast(d.error, 'error'); if (d.success) pollState(); })
-            .catch(() => toast('Transaction failed', 'error'));
-        });
-
-        // ESC closes modals
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeBuy(); closeSell(); } });
-
-        // ── Poll game state ─────────────────────────────────────
-        function pollState() {
-            fetch(`/api/room/${ROOM_ID}/state`)
-                .then(r => r.json())
-                .then(data => {
-                    if (!data.success) {
-                        if (data.error && data.error.includes('Session expired')) window.location.href = '/';
-                        return;
-                    }
-
-                    const r = data.room, p = data.player;
-
-                    // Price
-                    flashPrice(r.current_price);
-                    currentPrice  = r.current_price;
-                    playerCash    = p.cash;
-                    playerShares  = p.shares;
-                    IS_ACTIVE     = r.is_active;
-                    CRASH_OCCURRED = r.crash_occurred;
+            <!-- RIGHT SIDEBAR: ORDER BOOK & LEADERBOARD -->
+            <aside class="panel sidebar-right">
+                <div class="flex-col h-full">
                     
-                    // Sync countdown
-                    if (r.time_until_update !== undefined) {
-                        countdown = r.time_until_update;
-                    }
+                    <!-- ORDER BOOK -->
+                    <div class="panel-header">
+                        <span>Order Book</span>
+                        <span class="text-xs text-dim">DEEP</span>
+                    </div>
+                    <div class="ob-header">
+                        <div class="text-left">PRICE</div>
+                        <div class="text-right">SIZE</div>
+                        <div class="text-right">TOTAL</div>
+                    </div>
+                    <div class="order-book" style="flex: 1; overflow: hidden;">
+                        <div id="ob-asks" class="flex-col justify-end" style="flex: 1; overflow: hidden;">
+                            <!-- Asks injected here -->
+                        </div>
+                        <div class="spread-display" id="spread-display">
+                            SPREAD 0.05 (0.02%)
+                        </div>
+                        <div id="ob-bids" class="flex-col justify-start" style="flex: 1; overflow: hidden;">
+                            <!-- Bids injected here -->
+                        </div>
+                    </div>
 
-                    document.getElementById('current-price').textContent = '$' + r.current_price.toFixed(2);
-                    document.getElementById('player-cash').textContent   = '$' + p.cash.toFixed(2);
-                    document.getElementById('player-shares').textContent = p.shares;
-                    document.getElementById('total-value').textContent   = '$' + p.total_value.toFixed(2);
+                    <!-- LEADERBOARD COMPONENT -->
+                    <div class="panel-header" style="border-top: 1px solid var(--border-dim);">
+                        <span>Top Traders</span>
+                    </div>
+                    <div class="leaderboard-list" id="leaderboard-list" style="height: 35%; overflow-y: auto;">
+                        <!-- Leaderboard items -->
+                    </div>
+                </div>
+            </aside>
 
-                    // Status pill
-                    const pill     = document.getElementById('status-pill');
-                    const pillTxt  = document.getElementById('status-pill-text');
-                    const detail   = document.getElementById('status-detail');
-                    pill.className = 'status-pill';
-                    if (r.crash_occurred) {
-                        pill.classList.add('crashed'); pillTxt.textContent = 'CRASHED';
-                        detail.textContent = 'Market collapsed — game over';
-                    } else if (!r.is_active && r.round_number >= r.max_rounds) {
-                        pill.classList.add('completed'); pillTxt.textContent = 'COMPLETED';
-                        detail.textContent = `${r.max_rounds} rounds completed — final results`;
-                    } else if (r.round_number === 0) {
-                        pill.classList.add('waiting'); pillTxt.textContent = 'WAITING';
-                        detail.textContent = 'Waiting for the market to open...';
-                    } else {
-                        pill.classList.add('active');
-                        pillTxt.textContent = `ROUND ${r.round_number}/${r.max_rounds}`;
-                        detail.textContent = 'Market is live — trade now';
-                    }
+        </main>
 
-                    // Event badge
-                    if (data.price_history && data.price_history.length) {
-                        const ev = data.price_history[data.price_history.length - 1].event;
-                        const badge = document.getElementById('event-badge');
-                        badge.className = `event-badge event-${ev}`;
-                        const labels = {
-                            SURGE: '▲ Surge', RISE: '↑ Rise', STABLE: '→ Stable',
-                            DROP: '↓ Drop', CRASH_WARNING: '⚠ Warning', CRASH: '💥 Crash'
-                        };
-                        badge.textContent = labels[ev] || ev;
-                    }
+        <!-- FOOTER -->
+        <footer class="app-footer">
+            <div class="connection-status">
+                <div class="status-dot connected"></div>
+                <span>CONNECTED: <span class="text-bull">24ms</span></span>
+            </div>
+            <div class="text-dim">
+                MARKET_CRASH_V2.0.4 // BUILD_20260217
+            </div>
+            <div class="flex-center gap-md">
+                <button class="text-xs text-dim hover:text-white" onclick="toggleSound()">MUTE SOUND</button>
+                <button class="text-xs text-dim hover:text-white">HELP</button>
+            </div>
+        </footer>
+    </div>
 
-                    // Leaderboard
-                    const medals = ['🥇', '🥈', '🥉'];
-                    const rankClasses = ['r1', 'r2', 'r3'];
-                    const lb = document.getElementById('lb-list');
-                    lb.innerHTML = '';
-                    data.leaderboard.forEach((pl, i) => {
-                        const row = document.createElement('div');
-                        row.className = 'lb-row' + (pl.is_current ? ' me' : '');
-                        const rc = i < 3 ? rankClasses[i] : 'rn';
-                        const rd = i < 3 ? medals[i] : `#${i + 1}`;
-                        row.innerHTML = `
-                            <div class="lb-rank ${rc}">${rd}</div>
-                            <div class="lb-name">${pl.player_name}${pl.is_current ? '<span class="lb-you">YOU</span>' : ''}</div>
-                            <div class="lb-val">$${pl.total_value.toFixed(2)}</div>
-                        `;
-                        lb.appendChild(row);
-                    });
+    <!-- TOASTS CONTAINER -->
+    <div class="toast-wrap" id="toast-wrap"></div>
 
-                    // Transactions
-                    const tx = document.getElementById('tx-list');
-                    tx.innerHTML = '';
-                    if (!data.transactions.length) {
-                        tx.innerHTML = '<div class="tx-empty">No transactions yet</div>';
-                    } else {
-                        data.transactions.forEach(t => {
-                            const row = document.createElement('div');
-                            row.className = 'tx-row';
-                            const tp = t.type.toLowerCase();
-                            row.innerHTML = `
-                                <span class="tx-badge ${tp}">${t.type}</span>
-                                <span class="tx-name">${t.player_name}</span>
-                                <span class="tx-qty">${t.shares}×</span>
-                                <span class="tx-price">$${t.price.toFixed(2)}</span>
-                            `;
-                            tx.appendChild(row);
-                        });
-                    }
+    <!-- GAME OVER MODAL -->
+    <div class="modal-backdrop" id="game-over-modal">
+        <div class="modal-content text-center">
+            <div class="text-bear text-6xl mb-4">💥</div>
+            <h2 class="text-2xl font-bold mb-2" id="go-title">MARKET CRASHED</h2>
+            <p class="text-dim mb-6" id="go-desc">The bubble has burst. Your portfolio is dust.</p>
+            
+            <div class="bg-panel p-4 rounded-lg mb-6 border border-white/10">
+                <div class="text-xs text-dim uppercase tracking-widest mb-2">Final Net Worth</div>
+                <div class="text-3xl text-gold font-mono font-bold" id="go-score">$0.00</div>
+            </div>
 
-                    // Chart update
-                    if (chart && data.price_history && data.price_history.length) {
-                        const hist = data.price_history;
-                        const ev   = hist[hist.length - 1].event;
-                        let lineColor = '#00b4d8';
-                        if (['CRASH', 'CRASH_WARNING'].includes(ev)) lineColor = '#ff4757';
-                        else if (['SURGE', 'RISE'].includes(ev))     lineColor = '#00d484';
-                        else if (ev === 'DROP')                       lineColor = '#ffa502';
+            <button onclick="window.location.href='/'" class="w-full py-4 bg-blue-600 hover:bg-blue-700 rounded font-bold text-white transition-all">
+                RETURN TO LOBBY
+            </button>
+        </div>
+    </div>
 
-                        const ctx  = document.getElementById('price-chart').getContext('2d');
-                        const grad = ctx.createLinearGradient(0, 0, 0, 210);
-                        grad.addColorStop(0, lineColor + '38');
-                        grad.addColorStop(1, lineColor + '00');
-
-                        chart.data.labels = hist.map(h => `R${h.round}`);
-                        chart.data.datasets[0].data = hist.map(h => h.price);
-                        chart.data.datasets[0].borderColor = lineColor;
-                        chart.data.datasets[0].backgroundColor = grad;
-                        chart.data.datasets[0].pointBackgroundColor = lineColor;
-                        chart.update();
-                    }
-
-                    // Buttons
-                    const canTrade = r.is_active && !r.crash_occurred;
-                    document.getElementById('buy-btn').disabled  = !canTrade;
-                    document.getElementById('sell-btn').disabled = !canTrade;
-
-                    // Game over
-                    if (!r.is_active && (r.crash_occurred || r.round_number >= r.max_rounds)) {
-                        clearInterval(pollInterval);
-                        clearInterval(countdownInterval);
-
-                        const goTitle = document.getElementById('go-title');
-                        const goSub   = document.getElementById('go-sub');
-                        if (r.crash_occurred) {
-                            goTitle.textContent = '💥 MARKET CRASHED';
-                            goTitle.className   = 'go-title crashed';
-                            goSub.textContent   = 'THE MARKET HAS SPOKEN';
-                        } else {
-                            goTitle.textContent = '🏆 GAME OVER';
-                            goTitle.className   = 'go-title completed';
-                            goSub.textContent   = `${r.max_rounds} ROUNDS COMPLETED`;
-                        }
-
-                        if (data.leaderboard.length) {
-                            const w = data.leaderboard[0];
-                            document.getElementById('winner-name').textContent = w.player_name;
-                            document.getElementById('winner-val').textContent  = `$${w.total_value.toFixed(2)}`;
-
-                            const medalsFinal = ['🥇', '🥈', '🥉'];
-                            const rcFinal = ['r1', 'r2', 'r3'];
-                            document.getElementById('final-list').innerHTML = data.leaderboard.map((pl, i) => `
-                                <div class="fr-row">
-                                    <div class="fr-num ${i < 3 ? rcFinal[i] : 'rn'}">${i < 3 ? medalsFinal[i] : '#' + (i + 1)}</div>
-                                    <div class="fr-name">${pl.player_name}</div>
-                                    <div class="fr-val">$${pl.total_value.toFixed(2)}</div>
-                                </div>
-                            `).join('');
-                        }
-
-                        setTimeout(() => document.getElementById('game-over').classList.add('show'), 1500);
-                    }
-                })
-                .catch(console.error);
-        }
-
-        // ── Init ────────────────────────────────────────────────
-        document.addEventListener('DOMContentLoaded', () => {
-            initChart();
-            tickCountdown();
-            countdownInterval = setInterval(tickCountdown, 1000);
-            pollState();
-            pollInterval = setInterval(pollState, 2000);
-
-            if (!IS_ACTIVE || CRASH_OCCURRED) {
-                document.getElementById('buy-btn').disabled  = true;
-                document.getElementById('sell-btn').disabled = true;
-            }
-        });
-
-        window.addEventListener('beforeunload', () => {
-            clearInterval(pollInterval);
-            clearInterval(countdownInterval);
-        });
+    <!-- AUDIO FILES (Simulated via JS AudioContext, no files needed) -->
+    <script>
+        const CONFIG = {
+            roomId: "{{ room_id }}",
+            playerName: "{{ player_name }}",
+            initialCash: {{ initial_cash }},
+            initialShares: {{ initial_shares }},
+            initialPrice: {{ current_price }}
+        };
     </script>
+    <script src="{{ url_for('static', filename='js/index.js') }}"></script>
 </body>
 </html>

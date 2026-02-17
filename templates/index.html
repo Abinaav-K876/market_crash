@@ -3,153 +3,191 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Market Crash — Multiplayer Trading Simulation</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <title>MktCrash Pro | High Frequency Trading Sim</title>
+    <meta name="description" content="Experience the thrill of high-frequency trading. Survive the crash.">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* Landing Page Specific Overrides */
+        .landing-wrapper {
+            max-width: 1200px; margin: 0 auto; padding: 40px 20px;
+            position: relative; z-index: 10;
+            display: flex; flex-direction: column; align-items: center; text-align: center;
+        }
+        .hero-title {
+            font-size: 5rem; font-weight: 900; letter-spacing: -2px; line-height: 0.9;
+            background: linear-gradient(135deg, #fff 0%, #9ca3af 100%);
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+            margin-bottom: 24px;
+        }
+        .hero-subtitle {
+            font-size: 1.25rem; color: var(--text-gray); max-width: 600px; margin-bottom: 48px;
+            font-weight: 300;
+        }
+        .card-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px; width: 100%; margin-top: 48px;
+        }
+        .feature-card {
+            background: rgba(255,255,255,0.03); border: 1px solid var(--border-dim);
+            padding: 32px; border-radius: var(--radius-lg); text-align: left;
+            transition: all 0.3s ease;
+        }
+        .feature-card:hover {
+            border-color: var(--accent-blue); transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(45, 127, 249, 0.1);
+        }
+        .form-input {
+            width: 100%; background: rgba(0,0,0,0.5); border: 1px solid var(--border-mid);
+            padding: 16px; color: white; border-radius: var(--radius-md); font-family: var(--font-mono);
+            margin-bottom: 16px; transition: border-color 0.2s;
+        }
+        .form-input:focus { outline: none; border-color: var(--accent-blue); }
+        .action-btn {
+            width: 100%; padding: 16px; border-radius: var(--radius-md); font-weight: 700;
+            text-transform: uppercase; letter-spacing: 1px; cursor: pointer; border: none;
+            transition: all 0.2s;
+        }
+        .btn-create { background: var(--bull-primary); color: #003320; }
+        .btn-create:hover { box-shadow: 0 0 20px rgba(0, 240, 144, 0.4); }
+        .btn-join { background: var(--accent-blue); color: white; }
+        .btn-join:hover { box-shadow: 0 0 20px rgba(45, 127, 249, 0.4); }
+        
+        .ticker-wrap {
+            position: fixed; bottom: 0; left: 0; width: 100%; background: var(--bg-panel);
+            border-top: 1px solid var(--border-dim); padding: 10px 0; overflow: hidden;
+            z-index: 20;
+        }
+        .ticker { display: flex; animation: ticker 30s linear infinite; gap: 40px; white-space: nowrap; }
+        @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        .ticker-item { font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-gray); }
+        .ticker-val { color: var(--text-white); font-weight: 700; }
+        .ticker-up { color: var(--bull-primary); }
+        .ticker-down { color: var(--bear-primary); }
+
+        /* Glowing orb effect */
+        .orb {
+            position: absolute; width: 600px; height: 600px; border-radius: 50%;
+            filter: blur(100px); opacity: 0.15; z-index: 0; pointer-events: none;
+        }
+        .orb-1 { top: -200px; left: -100px; background: var(--accent-blue); animation: float 10s ease-in-out infinite; }
+        .orb-2 { bottom: -200px; right: -100px; background: var(--bull-primary); animation: float 12s ease-in-out infinite reverse; }
+        @keyframes float { 0%, 100% { transform: translate(0,0); } 50% { transform: translate(30px, 30px); } }
+    </style>
 </head>
-<body class="index-page">
+<body class="landing-hero">
 
-    <!-- Scrolling ticker tape -->
-    <div class="ticker-tape">
-        <div class="ticker-inner">
-            <span class="ticker-item"><span class="ticker-symbol">MCRSH</span><span class="ticker-price">$142.50</span><span class="ticker-change up">+8.2%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">BULL</span><span class="ticker-price">$87.30</span><span class="ticker-change up">+3.1%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">BEAR</span><span class="ticker-price">$23.10</span><span class="ticker-change down">-12.4%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">RISK</span><span class="ticker-price">$310.00</span><span class="ticker-change up">+21.0%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">PANIC</span><span class="ticker-price">$5.42</span><span class="ticker-change down">-66.3%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">GREED</span><span class="ticker-price">$225.80</span><span class="ticker-change up">+15.7%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">CRASH</span><span class="ticker-price">$0.01</span><span class="ticker-change down">-99.9%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">HODL</span><span class="ticker-price">$199.99</span><span class="ticker-change up">+9.9%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">PUMP</span><span class="ticker-price">$77.00</span><span class="ticker-change up">+44.0%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">DUMP</span><span class="ticker-price">$12.33</span><span class="ticker-change down">-38.5%</span></span>
-            <!-- duplicate set for seamless loop -->
-            <span class="ticker-item"><span class="ticker-symbol">MCRSH</span><span class="ticker-price">$142.50</span><span class="ticker-change up">+8.2%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">BULL</span><span class="ticker-price">$87.30</span><span class="ticker-change up">+3.1%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">BEAR</span><span class="ticker-price">$23.10</span><span class="ticker-change down">-12.4%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">RISK</span><span class="ticker-price">$310.00</span><span class="ticker-change up">+21.0%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">PANIC</span><span class="ticker-price">$5.42</span><span class="ticker-change down">-66.3%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">GREED</span><span class="ticker-price">$225.80</span><span class="ticker-change up">+15.7%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">CRASH</span><span class="ticker-price">$0.01</span><span class="ticker-change down">-99.9%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">HODL</span><span class="ticker-price">$199.99</span><span class="ticker-change up">+9.9%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">PUMP</span><span class="ticker-price">$77.00</span><span class="ticker-change up">+44.0%</span></span>
-            <span class="ticker-item"><span class="ticker-symbol">DUMP</span><span class="ticker-price">$12.33</span><span class="ticker-change down">-38.5%</span></span>
+    <!-- Background Elements -->
+    <div class="landing-grid"></div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <canvas id="particle-canvas" style="opacity: 0.2;"></canvas>
+
+    <!-- Main Content -->
+    <div class="landing-wrapper">
+        <div class="mb-8">
+            <span class="text-xs font-mono text-blue uppercase tracking-widest border border-blue/30 px-3 py-1 rounded-full bg-blue/10">
+                v2.0 Terminal Active
+            </span>
         </div>
-    </div>
-
-    <!-- Hero -->
-    <section class="hero">
-        <div class="hero-eyebrow">Multiplayer · Real-time · High Risk</div>
+        
         <h1 class="hero-title">
-            <span class="hero-market">MARKET</span><br>
-            <span class="hero-crash">CRASH</span>
+            MARKET<br>CRASH <span class="text-bear">PRO</span>
         </h1>
-        <p class="hero-sub">
-            Can you outsmart the market before it collapses?<br>
-            Trade, bluff, and survive across 10 volatile rounds with your friends.
+        
+        <p class="hero-subtitle">
+            The world's most volatile trading simulation. 
+            Compete with friends in real-time. Predict the crash. 
+            <strong>Survive the algorithm.</strong>
         </p>
-        <div class="hero-stats">
-            <div>
-                <div class="hs-val">$1,000</div>
-                <div class="hs-lbl">Starting Capital</div>
+
+        <div class="card-grid">
+            <!-- CREATE ROOM -->
+            <div class="feature-card">
+                <div class="text-bull mb-4 text-2xl">⚡</div>
+                <h3 class="text-xl font-bold mb-2">Initialize Session</h3>
+                <p class="text-sm text-dim mb-6">Create a new private trading floor. You control the lobby.</p>
+                
+                <form action="{{ url_for('create_room') }}" method="POST">
+                    <input type="text" name="player_name" class="form-input" placeholder="TRADER ALIAS" required minlength="2" maxlength="15" autocomplete="off">
+                    <button type="submit" class="action-btn btn-create">LAUNCH TERMINAL</button>
+                </form>
             </div>
-            <div>
-                <div class="hs-val">10</div>
-                <div class="hs-lbl">Max Rounds</div>
-            </div>
-            <div>
-                <div class="hs-val">10s</div>
-                <div class="hs-lbl">Market Interval</div>
-            </div>
-            <div>
-                <div class="hs-val danger">10%</div>
-                <div class="hs-lbl">Crash Chance / Round</div>
+
+            <!-- JOIN ROOM -->
+            <div class="feature-card">
+                <div class="text-blue mb-4 text-2xl">🔗</div>
+                <h3 class="text-xl font-bold mb-2">Connect to Node</h3>
+                <p class="text-sm text-dim mb-6">Join an existing session via secure protocol ID.</p>
+                
+                <form action="{{ url_for('join_room') }}" method="POST">
+                    <input type="text" name="room_id" class="form-input uppercase" placeholder="ROOM ID (e.g. X7K9P2)" required minlength="6" maxlength="6" autocomplete="off">
+                    <input type="text" name="player_name" class="form-input" placeholder="TRADER ALIAS" required minlength="2" maxlength="15" autocomplete="off">
+                    <button type="submit" class="action-btn btn-join">ESTABLISH UPLINK</button>
+                </form>
             </div>
         </div>
-    </section>
 
-    <!-- Action forms -->
-    <div class="action-section">
-        <div class="action-card">
-            <div class="ac-title">
-                <div class="ac-dot create"></div>
-                Create New Room
-            </div>
-            <form action="{{ url_for('create_room') }}" method="post" id="create-form">
-                <div class="form-group">
-                    <label class="form-lbl" for="player_name_create">Trader Name</label>
-                    <input type="text" id="player_name_create" name="player_name"
-                           class="form-input create"
-                           placeholder="e.g. WolfOfWallSt"
-                           maxlength="15" minlength="2" autocomplete="off">
-                    <div class="form-error" id="create-name-error">Must be 2–15 characters</div>
-                    <div class="form-hint">2–15 characters</div>
-                </div>
-                <button type="submit" class="btn-submit create">Create Room →</button>
-            </form>
-        </div>
-
-        <div class="action-card">
-            <div class="ac-title">
-                <div class="ac-dot join"></div>
-                Join Existing Room
-            </div>
-            <form action="{{ url_for('join_room') }}" method="post" id="join-form">
-                <div class="form-group">
-                    <label class="form-lbl" for="room_id">Room Code</label>
-                    <input type="text" id="room_id" name="room_id"
-                           class="form-input room-code"
-                           placeholder="A7B9C2"
-                           maxlength="6" minlength="6" autocomplete="off">
-                    <div class="form-error" id="join-room-error">Must be exactly 6 alphanumeric characters</div>
-                    <div class="form-hint">6-character code (A–Z, 0–9)</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-lbl" for="player_name_join">Trader Name</label>
-                    <input type="text" id="player_name_join" name="player_name"
-                           class="form-input"
-                           placeholder="e.g. TraderJoe"
-                           maxlength="15" minlength="2" autocomplete="off">
-                    <div class="form-error" id="join-name-error">Must be 2–15 characters</div>
-                    <div class="form-hint">2–15 characters</div>
-                </div>
-                <button type="submit" class="btn-submit join">Join Room →</button>
-            </form>
+        <div class="mt-16 text-dim text-xs font-mono">
+            <p>SYSTEM STATUS: <span class="text-bull">OPERATIONAL</span> &nbsp;|&nbsp; LATENCY: <span class="text-white">12ms</span> &nbsp;|&nbsp; ACTIVE NODES: <span class="text-white">8,421</span></p>
         </div>
     </div>
 
-    <!-- How to play -->
-    <div class="how-section">
-        <div class="how-lbl">How It Works</div>
-        <div class="how-grid">
-            <div class="how-step">
-                <div class="how-icon">💰</div>
-                <div class="how-title">Equal Capital</div>
-                <div class="how-desc">Everyone starts with $1,000. No advantages — pure trading skill.</div>
-            </div>
-            <div class="how-step">
-                <div class="how-icon">📈</div>
-                <div class="how-title">Live Market</div>
-                <div class="how-desc">Price updates every 10 seconds. Buy low, sell high before the crash.</div>
-            </div>
-            <div class="how-step">
-                <div class="how-icon">⚠️</div>
-                <div class="how-title">Market Collapse</div>
-                <div class="how-desc">10% chance of total wipeout each round. Cash out before it's too late.</div>
-            </div>
-            <div class="how-step">
-                <div class="how-icon">🏆</div>
-                <div class="how-title">Net Worth Wins</div>
-                <div class="how-desc">Highest portfolio value when the game ends takes the crown.</div>
-            </div>
+    <!-- Ticker Tape -->
+    <div class="ticker-wrap">
+        <div class="ticker">
+            <span class="ticker-item">BTC <span class="ticker-val ticker-up">+4.2%</span></span>
+            <span class="ticker-item">ETH <span class="ticker-val ticker-up">+2.1%</span></span>
+            <span class="ticker-item">MCRSH <span class="ticker-val ticker-down">-99.9%</span></span>
+            <span class="ticker-item">SPX <span class="ticker-val ticker-down">-0.5%</span></span>
+            <span class="ticker-item">NQ <span class="ticker-val ticker-up">+1.2%</span></span>
+            <span class="ticker-item">GOLD <span class="ticker-val ticker-up">+0.8%</span></span>
+            <span class="ticker-item">OIL <span class="ticker-val ticker-down">-1.5%</span></span>
+            <span class="ticker-item">VIX <span class="ticker-val ticker-up">+15.4%</span></span>
+            <!-- Duplicate for loop -->
+            <span class="ticker-item">BTC <span class="ticker-val ticker-up">+4.2%</span></span>
+            <span class="ticker-item">ETH <span class="ticker-val ticker-up">+2.1%</span></span>
+            <span class="ticker-item">MCRSH <span class="ticker-val ticker-down">-99.9%</span></span>
+            <span class="ticker-item">SPX <span class="ticker-val ticker-down">-0.5%</span></span>
+            <span class="ticker-item">NQ <span class="ticker-val ticker-up">+1.2%</span></span>
+            <span class="ticker-item">GOLD <span class="ticker-val ticker-up">+0.8%</span></span>
+            <span class="ticker-item">OIL <span class="ticker-val ticker-down">-1.5%</span></span>
+            <span class="ticker-item">VIX <span class="ticker-val ticker-up">+15.4%</span></span>
         </div>
     </div>
 
-    <footer class="site-footer">
-        Market Crash &copy; 2026 &nbsp;·&nbsp; Economic Simulation &nbsp;·&nbsp; Port 8086
-    </footer>
+    <script>
+        // Simple Particle System for Landing Page
+        const canvas = document.getElementById('particle-canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        
+        const particles = [];
+        for(let i=0; i<50; i++) {
+            particles.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                vx: (Math.random() - 0.5) * 0.5,
+                vy: (Math.random() - 0.5) * 0.5,
+                size: Math.random() * 2
+            });
+        }
 
-    <script src="{{ url_for('static', filename='js/index.js') }}"></script>
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#2d7ff9';
+            particles.forEach(p => {
+                p.x += p.vx; p.y += p.vy;
+                if(p.x < 0 || p.x > canvas.width) p.vx *= -1;
+                if(p.y < 0 || p.y > canvas.height) p.vy *= -1;
+                ctx.globalAlpha = 0.2;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+                ctx.fill();
+            });
+            requestAnimationFrame(animate);
+        }
+        animate();
+    </script>
 </body>
 </html>

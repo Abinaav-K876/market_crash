@@ -92,9 +92,20 @@ def init_db():
             FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
         )''')
 
+        c.execute('''CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room_id TEXT NOT NULL,
+            player_name TEXT NOT NULL,
+            message TEXT NOT NULL,
+            is_system INTEGER DEFAULT 0,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
+        )''')
+
         # Create indexes
         c.execute('CREATE INDEX IF NOT EXISTS idx_rooms_active ON rooms(is_active, crash_occurred, round_number)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_players_room ON players(room_id, is_active)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_chat_room ON chat_messages(room_id, timestamp)')
 
         db.commit()
         db.close()
@@ -128,10 +139,59 @@ class MarketEngine:
     NORMAL_VOLATILITY = (0.90, 1.10)
     BIG_VOLATILITY = (0.75, 1.25)
 
+    NEWS_HEADLINES = {
+        "SURGE": [
+            "Bulls are taking over! Market hits new highs.",
+            "Analysts predict infinite growth (for now).",
+            "Whales spotted buying massive volumes.",
+            "Central bank announces quantitative easing.",
+            "Tech sector rallies on AI breakthrough."
+        ],
+        "RISE": [
+            "Market sentiment turns positive.",
+            "Steady gains observed across the board.",
+            "Investors are cautiously optimistic.",
+            "Green candles everywhere!",
+            "Buying pressure increasing."
+        ],
+        "STABLE": [
+            "Market consolidates sideways.",
+            "Traders awaiting clear direction.",
+            "Low volatility observed this round.",
+            "Price stability brings calm to the floor.",
+            "No major moves reported."
+        ],
+        "DROP": [
+            "Profit taking triggers minor sell-off.",
+            "Market correcting after recent highs.",
+            "Bears are testing support levels.",
+            "Weak hands are folding.",
+            "Minor dip - buy the dip?"
+        ],
+        "CRASH_WARNING": [
+            "⚠️ WARNING: Liquidity drying up rapidly!",
+            "⚠️ PANIC: Heavy sell walls detected!",
+            "⚠️ FLASH CRASH IMMINENT? Volatility spikes.",
+            "⚠️ FUD spreading like wildfire.",
+            "⚠️ SYSTEM ALERT: Unstable market conditions."
+        ],
+        "CRASH": [
+            "🔥 MARKET CRASH! IT'S ALL GONE!",
+            "🔥 TOTAL COLLAPSE! GET OUT NOW!",
+            "🔥 BUBBLE BURST! PANIC SELLING!",
+            "🔥 404: MONEY NOT FOUND.",
+            "🔥 GAME OVER: The bears have won."
+        ]
+    }
+
+    @staticmethod
+    def get_news(event_type):
+        return random.choice(MarketEngine.NEWS_HEADLINES.get(event_type, ["Market is unpredictable."]))
+
     @staticmethod
     def calculate_new_price(current_price, round_num):
         if random.random() < MarketEngine.CRASH_PROBABILITY:
-            return 0.01, "CRASH", True
+            return 0.01, "CRASH", True, MarketEngine.get_news("CRASH")
 
         if round_num > 7:
             volatility = (0.80, 1.30)
@@ -157,7 +217,7 @@ class MarketEngine:
         else:
             event_type = "STABLE"
 
-        return new_price, event_type, False
+        return new_price, event_type, False, MarketEngine.get_news(event_type)
 
 
 def market_simulation_loop():
@@ -188,7 +248,7 @@ def market_simulation_loop():
                 price = room['current_price']
                 round_num = room['round_number'] + 1
 
-                new_price, event, is_crash = MarketEngine.calculate_new_price(price, round_num)
+                new_price, event, is_crash, news_text = MarketEngine.calculate_new_price(price, round_num)
 
                 is_active = 0 if (is_crash or round_num >= MarketEngine.MAX_ROUNDS) else 1
                 crash_occurred = 1 if is_crash else 0
@@ -206,6 +266,11 @@ def market_simulation_loop():
                 if c.rowcount > 0:
                     c.execute('''INSERT INTO price_history (room_id, round_number, price, event_type) 
                                 VALUES (?, ?, ?, ?)''', (room_id, round_num, new_price, event))
+                    
+                    # Insert system news message
+                    c.execute('''INSERT INTO chat_messages (room_id, player_name, message, is_system)
+                                VALUES (?, 'MARKET NEWS', ?, 1)''', (room_id, news_text))
+
                     if is_crash:
                         print(f"!!! MARKET CRASH in room {room_id} at round {round_num} !!!")
 
@@ -267,6 +332,25 @@ def generate_room_id():
         if not db.execute("SELECT 1 FROM rooms WHERE room_id=?", (rid,)).fetchone():
             return rid
 
+def generate_order_book(current_price):
+    """Simulate an order book around the current price"""
+    asks = []
+    bids = []
+    
+    # Generate Asks (Sellers above price)
+    for i in range(1, 6):
+        price = current_price * (1 + (i * 0.005) + random.uniform(0, 0.002))
+        vol = random.randint(10, 500)
+        asks.append({'price': round(price, 2), 'vol': vol})
+        
+    # Generate Bids (Buyers below price)
+    for i in range(1, 6):
+        price = current_price * (1 - (i * 0.005) - random.uniform(0, 0.002))
+        vol = random.randint(10, 500)
+        bids.append({'price': round(price, 2), 'vol': vol})
+        
+    return {'asks': list(reversed(asks)), 'bids': bids}
+
 
 # ======================
 # ROUTES
@@ -288,6 +372,11 @@ def create_room():
         db.execute('INSERT INTO rooms (room_id) VALUES (?)', (room_id,))
         db.execute('INSERT INTO players (room_id, player_name) VALUES (?, ?)', (room_id, name))
         player_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+        
+        # Initial system message
+        db.execute('''INSERT INTO chat_messages (room_id, player_name, message, is_system)
+                     VALUES (?, 'SYSTEM', 'Room created. Waiting for players...', 1)''', (room_id,))
+        
         db.commit()
 
         session.permanent = True
@@ -318,6 +407,11 @@ def join_room():
 
         db.execute('INSERT INTO players (room_id, player_name) VALUES (?, ?)', (room_id, name))
         player_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+        
+        # Join message
+        db.execute('''INSERT INTO chat_messages (room_id, player_name, message, is_system)
+                     VALUES (?, 'SYSTEM', ?, 1)''', (room_id, f"{name} joined the room."))
+        
         db.commit()
 
         session.permanent = True
@@ -390,6 +484,10 @@ def room_state(room_id):
                                WHERE room_id=? ORDER BY round_number DESC LIMIT 10''',
                              (room_id,)).fetchall()
 
+        # Fetch chat messages
+        chats = db.execute('''SELECT player_name, message, is_system, timestamp FROM chat_messages 
+                             WHERE room_id=? ORDER BY timestamp DESC LIMIT 50''', (room_id,)).fetchall()
+
         chart_data = [{'round': h['round_number'], 'price': round(h['price'], 2), 'event': h['event_type']}
                       for h in reversed(history)]
 
@@ -435,10 +533,38 @@ def room_state(room_id):
                 'total': round(t['total_amount'], 2),
                 'timestamp': str(t['timestamp'])
             } for t in txns],
-            'price_history': chart_data
+            'price_history': chart_data,
+            'chat': [{
+                'player': c['player_name'],
+                'message': c['message'],
+                'is_system': bool(c['is_system']),
+                'time': str(c['timestamp'])[11:16] # HH:MM format
+            } for c in reversed(chats)],
+            'order_book': generate_order_book(room['current_price'])
         })
     except Exception as e:
         print(f"Error in room_state: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/room/<room_id>/chat', methods=['POST'])
+@require_player
+def post_chat(room_id):
+    try:
+        if not request.is_json:
+            return jsonify({'error': 'Invalid request'}), 400
+        message = request.json.get('message', '').strip()
+        
+        if not message or len(message) > 140:
+             return jsonify({'error': 'Invalid message length'}), 400
+
+        db = get_db()
+        db.execute('''INSERT INTO chat_messages (room_id, player_name, message, is_system)
+                     VALUES (?, ?, ?, 0)''', (room_id, request.player['player_name'], message))
+        db.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error in post_chat: {e}")
         return jsonify({'error': str(e)}), 500
 
 
